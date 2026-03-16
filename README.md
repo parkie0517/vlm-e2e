@@ -10,6 +10,49 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ![Project Overview](./src/overview.png)
 
+## Experimental Setup
+
+- Base VLM: Qwen3-VL 2B
+- Fine-tuning setup: LoRA on the LLM, with an optional vision adapter
+- Image input: front camera
+
+## Data Configuration
+
+- Q&A dataset: DriveLM-nuScenes v1.1
+- Training split: `challenge/data/v1_1_train_nus.json`
+- Evaluation split: `challenge/data/v1_1_val_nus_q_only.json`
+- E2E dataset: nuScenes in UniAD-style format
+- Prediction target: ego trajectory prediction
+- Trajectory format: 12 future points at 0.5-second intervals over a 6-second horizon
+- Other agents' motion prediction is currently out of scope
+- Core requirement: align the DriveLM Q&A data with UniAD-style E2E trajectory labels
+
+## DriveLM-nuScenes Dataset
+- Train: 4,072
+- Val: 799
+
+## Planned Comparison Axes
+
+### Action Heads
+
+- MLP head
+- RT-2-style tokenization head
+- Diffusion head
+
+### Reasoning Variants
+
+- No CoT: provide the front camera image and directly predict the trajectory
+- Minimum CoT: generate perception output first, then use it as context for trajectory prediction
+- DriveLM-style CoT: Perception -> Prediction -> Planning -> Behavior -> Motion
+
+## Evaluation Metrics
+
+- L2
+- ADE
+- FDE
+- `obj_col`
+- `obj_box_col`
+
 ## My Contributions
 
 - Fine-tuning using only Vision Language Adapters and LoRA instead of full fine-tuning
@@ -28,8 +71,8 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ### Build Dataset
 
-- [x] Create a concrete plan for this project: `heejun/plan.txt`
-- [ ] Align DriveLM v1.1 and UniAD trajectory labels
+- [x] Create a concrete plan for this project: `README.md (this file!)`
+- [ ] Align DriveLM v1.1 and UniAD trajectory labels: `python tools/match_drivelm_uniad.py`
 - [ ] Build a dataset class (loader) that unifies DriveLM and UniAD-style data
 - [ ] Verify one aligned sample by visualizing the ground-truth trajectory on the front camera image (front image, Q&A entry, GT)
 
@@ -43,7 +86,7 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ### Create and Train CoT Pipeline Using Baseline Method
 
-- [ ] Implement a simple CoT pipeline
+- [ ] Implement the minimum CoT pipeline
 - [ ] Train and evaluate on a small subset (L2 loss only)
 - [ ] Train and evaluate on the full dataset
 - [ ] Implement a DriveLM-style CoT pipeline
@@ -52,7 +95,7 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ### Analyze MLP Head Method
 
-- [ ] Compare three variants: no CoT, simple CoT, and DriveLM-style CoT
+- [ ] Compare three variants: no CoT, minimum CoT, and DriveLM-style CoT
 
 ### Implement RT-2 Head
 
@@ -62,7 +105,7 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ### Analyze Token Head Method
 
-- [ ] Compare three variants: no CoT, simple CoT, and DriveLM-style CoT
+- [ ] Compare three variants: no CoT, minimum CoT, and DriveLM-style CoT
 
 ### Implement Diffusion Head
 
@@ -72,7 +115,7 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ### Analyze Diffusion Head Method
 
-- [ ] Compare three variants: no CoT, simple CoT, and DriveLM-style CoT
+- [ ] Compare three variants: no CoT, minimum CoT, and DriveLM-style CoT
 
 ## Acknowledgments
 
