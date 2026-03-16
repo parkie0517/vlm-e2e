@@ -1,0 +1,17 @@
+You know what? I think I've made up my mind.
+Use UniAD's data loading for forming trajectory prediction GT data.
+
+And after that, I want to start a toy project.
+I want to try different kinds of heads: simple MLP, diffusion head, DriveLM's head (discrete tokens style)
+I also want to try 3 different methods for using the VLM.
+First method: The most naive approach for using the VLM. One question -> direct trajectory output.
+So, the question would be like, based on what you see, output a trajectory.
+Second method: Utilize challenge baseline's method. Ask a question -> answer -> gathers those context (Q and A) give to the vlm again -> output trajectory.
+For example, first question would be like what do you think about the current road?
+Then, the vlm will answer something.
+After we form the context as Q + A. Then, we tell the VLM to output the trajectory.
+Thrid method: Try to implement the method shown in DriveLM's main paper. Head is tokenized version.
+
+What do you think about this project? 
+It may not become a paper, but what do you think about the idea of the project?
+I want to discuss this with you.
