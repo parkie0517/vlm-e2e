@@ -28,7 +28,7 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 ### Build Dataset
 
-- [ ] Create a concrete plan for this project: `heejun/plan.txt`
+- [x] Create a concrete plan for this project: `heejun/plan.txt`
 - [ ] Align DriveLM v1.1 and UniAD trajectory labels
 - [ ] Build a dataset class (loader) that unifies DriveLM and UniAD-style data
 - [ ] Verify one aligned sample by visualizing the ground-truth trajectory on the front camera image (front image, Q&A entry, GT)
