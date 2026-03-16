@@ -23,3 +23,11 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 - Preparation of a paper-style report for beginners in VLM-based end-to-end autonomous driving
 - Quantitative comparative analysis of the contributions of VLM reasoning strategies and action heads
 - Release of an open-source codebase for future research
+
+## Acknowledgments
+
+Special thanks to the following projects:
+
+- [UniAD](https://github.com/opendrivelab/uniad)
+- [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)
+- [DriveLM](https://github.com/OpenDriveLab/DriveLM)
