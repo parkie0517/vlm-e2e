@@ -73,7 +73,7 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 
 - [x] Create a concrete plan for this project: `README.md (this file!)`
 - [x] Align DriveLM v1.1 and UniAD trajectory labels: `python tools/match_drivelm_uniad.py`
-- [ ] Build a dataset class (loader) that unifies DriveLM and UniAD-style data
+- [x] Build a dataset class (loader) that unifies DriveLM and UniAD-style data: `dataset/drivelm_uniad_dataset.py`
 - [ ] Verify one aligned sample by visualizing the ground-truth trajectory on the front camera image (front image, Q&A entry, GT)
 
 ### Build Baseline Model (No CoT + MLP Head)
