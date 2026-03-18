@@ -1,10 +1,10 @@
 import json
 import pickle
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict
 
 import numpy as np
-from nuscenes.prediction import convert_global_coords_to_local
+from nuscenes.prediction import convert_global_coords_to_local # 이 쓰레기 같은 helper
 from torch.utils.data import Dataset
 
 
@@ -61,6 +61,7 @@ class DriveLMUniADDataset(Dataset):
             "timestamp": info["timestamp"],
             "scene_description": sample["scene_description"],
             "image_paths": self._select_image_paths(info),
+            "camera_meta": self._select_camera_meta(info),
             "qa": sample["qa"],
             "ego_past_traj": ego_past_traj,
             "ego_past_mask": ego_past_mask,
@@ -113,6 +114,19 @@ class DriveLMUniADDataset(Dataset):
             image_paths[cam_name] = self._normalize_uniad_path(cam_info["data_path"])
         return image_paths
 
+    def _select_camera_meta(self, info):
+        camera_meta = {}
+        for cam_name in self.camera_names:
+            cam_info = info["cams"].get(cam_name)
+            if cam_info is None:
+                raise KeyError("Camera {} not found for token {}".format(cam_name, info["token"]))
+            camera_meta[cam_name] = {
+                "sensor2ego_translation": np.asarray(cam_info["sensor2ego_translation"], dtype=np.float32),
+                "sensor2ego_rotation": np.asarray(cam_info["sensor2ego_rotation"], dtype=np.float32),
+                "cam_intrinsic": np.asarray(cam_info["cam_intrinsic"], dtype=np.float32),
+            }
+        return camera_meta
+
     def _normalize_uniad_path(self, path_str):
         path_str = str(path_str)
         if path_str.startswith("./"):
@@ -146,8 +160,11 @@ class DriveLMUniADDataset(Dataset):
                 translation=info["ego2global_translation"],
                 rotation=info["ego2global_rotation"],
             ).astype(np.float32)
-            steps = min(len(local), self.future_steps)
-            traj[:steps] = local[:steps]
+            # convert_global_coords_to_local returns [lateral(right+), longitudinal(fwd+)].
+            # Remap to nuscenes ego frame: [x=forward, y=left].
+            ego = np.column_stack([local[:, 1], -local[:, 0]])
+            steps = min(len(ego), self.future_steps)
+            traj[:steps] = ego[:steps]
             mask[:steps] = 1.0
 
         return traj, mask
@@ -175,8 +192,11 @@ class DriveLMUniADDataset(Dataset):
                 translation=info["ego2global_translation"],
                 rotation=info["ego2global_rotation"],
             ).astype(np.float32)
-            steps = min(len(local), self.history_steps)
-            traj[-steps:] = local[-steps:]
+            # convert_global_coords_to_local returns [lateral(right+), longitudinal(fwd+)].
+            # Remap to nuscenes ego frame: [x=forward, y=left].
+            ego = np.column_stack([local[:, 1], -local[:, 0]])
+            steps = min(len(ego), self.history_steps)
+            traj[-steps:] = ego[-steps:]
             mask[-steps:] = 1.0
 
         return traj, mask

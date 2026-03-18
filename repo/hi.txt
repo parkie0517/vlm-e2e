@@ -1,0 +1,18 @@
+Alright I need you to create a script.
+create it inside: ./tools/
+this file takes in
+- number of samples to validate (randomly chosen)
+- train or val
+this file outputs an image
+- six images arranged like this:
+front left, front, front right
+rear right, rear, rear left
+draw gt trajectory on front image.
+and on the right side of the image, 
+write down the ego staus information
+also the qna.
+So, to summarize there are 2 columns.
+left column: images + trajectory
+right column: ego status + qna
+
+what do you think about my plan?
