@@ -57,17 +57,9 @@ def load_image(path):
     return image
 
 
-def project_ego_traj_to_front(front_image, front_meta, ego_future_traj, ego_future_mask,
-                              max_forward_m=20.0):
+def project_ego_traj_to_front(front_image, front_meta, ego_future_traj, ego_future_mask):
     image = front_image.copy()
     valid_points = ego_future_traj[ego_future_mask > 0]
-    if len(valid_points) == 0:
-        return image
-
-    # ego_future_traj is now in nuscenes ego frame: [:,0]=forward, [:,1]=left
-    # Clip to max_forward_m to keep trajectory on visible road surface.
-    range_mask = valid_points[:, 0] <= max_forward_m
-    valid_points = valid_points[range_mask]
     if len(valid_points) == 0:
         return image
 
@@ -84,7 +76,7 @@ def project_ego_traj_to_front(front_image, front_meta, ego_future_traj, ego_futu
     translation = front_meta["sensor2ego_translation"].reshape(3, 1)
     pts_cam = rotation.T.dot(pts_ego - translation)
 
-    depth_mask = pts_cam[2, :] > 0.5
+    depth_mask = pts_cam[2, :] > 1e-3
     if not np.any(depth_mask):
         return image
 

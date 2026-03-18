@@ -53,6 +53,15 @@ This project compares and analyzes end-to-end autonomous driving performance by 
 - `obj_col`
 - `obj_box_col`
 
+## Important Notes
+
+From now on, this section records important implementation details that readers
+should keep in mind.
+
+- There is a problem with `convert_global_coords_to_local()`. Read
+  [docs/trajectory_coordinate_convention.md](./docs/trajectory_coordinate_convention.md)
+  before modifying trajectory-related code.
+
 ## My Contributions
 
 - Fine-tuning using only Vision Language Adapters and LoRA instead of full fine-tuning
