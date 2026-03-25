@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-This project compares and analyzes end-to-end autonomous driving performance by combining various reasoning strategies and action heads for vision-language models (VLMs), based on the Intern v2 model and the DriveLM-nuScenes dataset.
+This project compares and analyzes end-to-end autonomous driving performance by combining various reasoning strategies and action heads for vision-language models (VLMs), based on Qwen3-VL and the DriveLM-nuScenes dataset.
 
 ## Overview Image
 
@@ -61,6 +61,8 @@ should keep in mind.
 - There is a problem with `convert_global_coords_to_local()`. Read
   [docs/trajectory_coordinate_convention.md](./docs/trajectory_coordinate_convention.md)
   before modifying trajectory-related code.
+- The pretrained Qwen3-VL feasibility probe uses the `hj_qwen` Conda environment
+  and `tools/qwen3_vl_probe.py`.
 
 ## My Contributions
 
@@ -87,6 +89,7 @@ should keep in mind.
 
 ### Build Baseline Model (No CoT + MLP Head)
 
+- [x] Create `hj_qwen` and verify pretrained Qwen3-VL inference on `random_scene.png`: `tools/qwen3_vl_probe.py`
 - [ ] Build the baseline model: VLM model with LoRA on the LLM (optional: vision adapter)
 - [ ] Attach an MLP head (LLM features -> MLP head -> trajectory output)
 - [ ] Run a forward pass and verify output shape, loss computation, and metric pipeline with visualization
