@@ -149,11 +149,11 @@ def print_qna(split, sample):
         if not qa_list:
             continue
         print("[{}]".format(group_name))
-        for idx, qa in enumerate(qa_list, start=1):
-            q_text = qa.get("Q", "")
-            a_text = qa.get("A", "")
-            print("Q{}: {}".format(idx, q_text))
-            print("A{}: {}".format(idx, a_text if a_text else "<empty>"))
+        qa = qa_list[0]
+        q_text = qa.get("Q", "")
+        a_text = qa.get("A", "")
+        print("Q1: {}".format(q_text))
+        print("A1: {}".format(a_text if a_text else "<empty>"))
         print("")
 
 
