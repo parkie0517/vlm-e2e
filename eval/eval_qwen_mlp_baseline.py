@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -26,6 +27,11 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--subset-size", type=int, default=0)
+    parser.add_argument(
+        "--mlp-layernorm",
+        action="store_true",
+        help="Enable LayerNorm at the input of the MLP trajectory head for fresh/non-checkpoint runs.",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return parser.parse_args()
 
@@ -66,8 +72,13 @@ def main():
     if args.subset_size > 0 and args.subset_size < len(dataset):
         dataset = Subset(dataset, list(range(args.subset_size)))
 
-    model = Qwen3MLPTrajectoryModel(model_name=args.model_name)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu")
+    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    checkpoint_model_config = checkpoint.get("model_config", {})
+    model = Qwen3MLPTrajectoryModel(
+        model_name=args.model_name,
+        future_steps=checkpoint_model_config.get("future_steps", 12),
+        use_layernorm=checkpoint_model_config.get("use_layernorm", args.mlp_layernorm),
+    )
     model.load_trainable_state_dict(checkpoint["trainable_state_dict"])
     collator = model.get_collator()
     device = torch.device(args.device)
@@ -87,7 +98,7 @@ def main():
     col_metrics = []
 
     with torch.no_grad():
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc=f"eval {args.split}", ncols=80, leave=True):
             batch = move_batch_to_device(batch, device)
             outputs = model(batch)
             losses.append(float(outputs["loss"].item()))

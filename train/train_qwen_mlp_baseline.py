@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -33,8 +34,19 @@ def parse_args():
     parser.add_argument("--subset-size", type=int, default=0)
     parser.add_argument("--val-subset-size", type=int, default=0)
     parser.add_argument("--grad-accum-steps", type=int, default=1)
+    parser.add_argument(
+        "--mlp-layernorm",
+        action="store_true",
+        help="Enable LayerNorm at the input of the MLP trajectory head.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--resume", default="", help="Path to a checkpoint to resume from.")
+    parser.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help="Resume automatically from output_dir/last.pt if it exists.",
+    )
     return parser.parse_args()
 
 
@@ -70,7 +82,7 @@ def evaluate(model, dataloader, device):
     col_metrics = []
     losses = []
     with torch.no_grad():
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc="eval", ncols=80, leave=False):
             batch = move_batch_to_device(batch, device)
             outputs = model(batch)
             losses.append(float(outputs["loss"].item()))
@@ -104,11 +116,22 @@ def save_checkpoint(path: Path, model, optimizer, epoch: int, metrics):
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "epoch": epoch,
+        "model_config": model.get_model_config(),
         "trainable_state_dict": model.get_trainable_state_dict(),
         "optimizer": optimizer.state_dict(),
         "metrics": metrics,
     }
     torch.save(payload, path)
+
+
+def resolve_resume_path(args, output_dir: Path):
+    if args.resume:
+        return Path(args.resume)
+    if args.auto_resume:
+        candidate = output_dir / "last.pt"
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def main():
@@ -128,7 +151,23 @@ def main():
     train_dataset = maybe_subset(train_dataset, args.subset_size, args.seed)
     val_dataset = maybe_subset(val_dataset, args.val_subset_size, args.seed + 1)
 
-    model = Qwen3MLPTrajectoryModel(model_name=args.model_name)
+    model_config = {
+        "future_steps": 12,
+        "use_layernorm": args.mlp_layernorm,
+    }
+    checkpoint = None
+    resume_path = resolve_resume_path(args, output_dir=Path(args.output_dir))
+    if resume_path is not None:
+        checkpoint = torch.load(resume_path, map_location="cpu", weights_only=False)
+        checkpoint_model_config = checkpoint.get("model_config", {})
+        model_config["use_layernorm"] = checkpoint_model_config.get(
+            "use_layernorm", model_config["use_layernorm"]
+        )
+        model_config["future_steps"] = checkpoint_model_config.get(
+            "future_steps", model_config["future_steps"]
+        )
+
+    model = Qwen3MLPTrajectoryModel(model_name=args.model_name, **model_config)
     collator = model.get_collator()
     device = torch.device(args.device)
     model = model.to(device)
@@ -160,13 +199,53 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     best_ade = float("inf")
+    start_epoch = 1
 
-    for epoch in range(1, args.epochs + 1):
+    if resume_path is not None:
+        model.load_trainable_state_dict(checkpoint["trainable_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        start_epoch = int(checkpoint["epoch"]) + 1
+        metrics = checkpoint.get("metrics", {})
+        resumed_best_ade = metrics.get("ade", float("inf"))
+        if resumed_best_ade is not None and not np.isnan(resumed_best_ade):
+            best_ade = float(resumed_best_ade)
+        print(
+            json.dumps(
+                {
+                    "resume_from": str(resume_path),
+                    "start_epoch": start_epoch,
+                    "best_ade": best_ade,
+                    "model_config": model.get_model_config(),
+                },
+                indent=2,
+            )
+        )
+
+    if start_epoch > args.epochs:
+        print(
+            json.dumps(
+                {
+                    "message": "Training already complete for requested epoch range.",
+                    "start_epoch": start_epoch,
+                    "requested_epochs": args.epochs,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         optimizer.zero_grad(set_to_none=True)
         running_loss = []
 
-        for step, batch in enumerate(train_loader, start=1):
+        train_pbar = tqdm(
+            train_loader,
+            desc=f"train {epoch}/{args.epochs}",
+            ncols=80,
+            leave=True,
+        )
+        for step, batch in enumerate(train_pbar, start=1):
             batch = move_batch_to_device(batch, device)
             with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=device.type == "cuda"):
                 outputs = model(batch)
@@ -186,6 +265,7 @@ def main():
                 optimizer.zero_grad(set_to_none=True)
 
             running_loss.append(float(outputs["loss"].item()))
+            train_pbar.set_postfix(loss=f"{outputs['loss'].item():.4f}")
 
         metrics = evaluate(model, val_loader, device)
         metrics["train_loss"] = float(np.mean(running_loss)) if running_loss else float("nan")

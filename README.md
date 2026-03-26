@@ -87,7 +87,7 @@ should keep in mind.
 - [x] Build a dataset class (loader) that unifies DriveLM and UniAD-style data: `dataset/drivelm_uniad_dataset.py`
 - [x] Verify one aligned sample by visualizing the ground-truth trajectory on the front camera image (surround-view images, Q&A entry, GT): `tools/visualize_aligned_samples.py`
 
-### Build Baseline Model (No CoT + MLP Head)
+### Build Baseline Model (No CoT + Direct Output)
 
 - [x] Create `hj_qwen` and verify pretrained Qwen3-VL inference on `random_scene.png`: `tools/qwen3_vl_probe.py`
 - [x] Build the baseline model: VLM model with LoRA on the LLM + visual adaptor modules: `models/qwen3_mlp_baseline.py`

@@ -3,9 +3,8 @@ heejun/
 challenge/data/
 checkpoints/
 .claude/
-.tmp_train_qwen_mlp/
-.tmp_vis/
-.tmp_vis3/
+.tmp_*/
+outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

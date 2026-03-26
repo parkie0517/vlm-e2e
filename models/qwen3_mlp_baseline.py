@@ -25,14 +25,20 @@ def masked_l2_loss(pred_traj: torch.Tensor, target_traj: torch.Tensor, target_ma
 
 
 class TrajectoryMLPHead(nn.Module):
-    def __init__(self, hidden_size: int, future_steps: int):
+    def __init__(self, hidden_size: int, future_steps: int, use_layernorm: bool = False):
         super().__init__()
         self.future_steps = future_steps
-        self.layers = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.GELU(),
-            nn.Linear(hidden_size, future_steps * 2),
+        layers = []
+        if use_layernorm:
+            layers.append(nn.LayerNorm(hidden_size))
+        layers.extend(
+            [
+                nn.Linear(hidden_size, hidden_size),
+                nn.GELU(),
+                nn.Linear(hidden_size, future_steps * 2),
+            ]
         )
+        self.layers = nn.Sequential(*layers)
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
         return self.layers(hidden).view(hidden.shape[0], self.future_steps, 2)
@@ -92,6 +98,7 @@ class Qwen3MLPTrajectoryModel(nn.Module):
         self,
         model_name: str = DEFAULT_MODEL_PATH,
         future_steps: int = 12,
+        use_layernorm: bool = False,
         lora_r: int = 8,
         lora_alpha: int = 16,
         lora_dropout: float = 0.05,
@@ -100,6 +107,7 @@ class Qwen3MLPTrajectoryModel(nn.Module):
         super().__init__()
         self.model_name = model_name
         self.future_steps = future_steps
+        self.use_layernorm = use_layernorm
         self.processor = AutoProcessor.from_pretrained(model_name)
 
         preferred_dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
@@ -135,7 +143,11 @@ class Qwen3MLPTrajectoryModel(nn.Module):
         self._unfreeze_visual_adaptors()
 
         hidden_size = int(self.model.config.text_config.hidden_size)
-        self.head = TrajectoryMLPHead(hidden_size=hidden_size, future_steps=future_steps)
+        self.head = TrajectoryMLPHead(
+            hidden_size=hidden_size,
+            future_steps=future_steps,
+            use_layernorm=use_layernorm,
+        )
         self.head.float()
 
     def _unfreeze_visual_adaptors(self):
@@ -173,6 +185,12 @@ class Qwen3MLPTrajectoryModel(nn.Module):
 
     def get_collator(self, prompt: str = DEFAULT_PROMPT) -> QwenTrajectoryCollator:
         return QwenTrajectoryCollator(self.processor, prompt=prompt)
+
+    def get_model_config(self) -> Dict[str, Any]:
+        return {
+            "future_steps": self.future_steps,
+            "use_layernorm": self.use_layernorm,
+        }
 
     def get_trainable_state_dict(self) -> Dict[str, torch.Tensor]:
         trainable = {}
