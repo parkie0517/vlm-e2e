@@ -2,6 +2,10 @@
 heejun/
 challenge/data/
 checkpoints/
+.claude/
+.tmp_train_qwen_mlp/
+.tmp_vis/
+.tmp_vis3/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -16,7 +20,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
-downloads/
+downloads/  
 eggs/
 .eggs/
 lib/

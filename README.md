@@ -90,10 +90,10 @@ should keep in mind.
 ### Build Baseline Model (No CoT + MLP Head)
 
 - [x] Create `hj_qwen` and verify pretrained Qwen3-VL inference on `random_scene.png`: `tools/qwen3_vl_probe.py`
-- [ ] Build the baseline model: VLM model with LoRA on the LLM (optional: vision adapter)
-- [ ] Attach an MLP head (LLM features -> MLP head -> trajectory output)
-- [ ] Run a forward pass and verify output shape, loss computation, and metric pipeline with visualization
-- [ ] Train and evaluate on a small subset first (L2 loss only; evaluate with L2, ADE, FDE, `obj_col`, and `obj_box_col`)
+- [x] Build the baseline model: VLM model with LoRA on the LLM + visual adaptor modules: `models/qwen3_mlp_baseline.py`
+- [x] Attach an MLP head (LLM features -> MLP head -> trajectory output): `models/qwen3_mlp_baseline.py`
+- [x] Run a forward pass and verify output shape and loss computation: `models/qwen3_mlp_baseline.py`
+- [x] Train and evaluate on a small subset first (L2 loss only; evaluate with L2, ADE, FDE, `obj_col`, and `obj_box_col`): `train/train_qwen_mlp_baseline.py`, `eval/eval_qwen_mlp_baseline.py`
 - [ ] Train and evaluate on the full dataset
 
 ### Create and Train CoT Pipeline Using Baseline Method

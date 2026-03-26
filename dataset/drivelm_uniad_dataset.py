@@ -5,6 +5,7 @@ from typing import Dict
 
 import numpy as np
 from nuscenes.prediction import convert_global_coords_to_local # 이 쓰레기 같은 helper
+from pyquaternion import Quaternion
 from torch.utils.data import Dataset
 
 
@@ -53,6 +54,7 @@ class DriveLMUniADDataset(Dataset):
 
         ego_past_traj, ego_past_mask = self._build_ego_history(info)
         ego_future_traj, ego_future_mask = self._build_ego_future(info)
+        future_gt_boxes = self._build_future_gt_boxes(info)
 
         return {
             "scene_token": sample["scene_token"],
@@ -67,6 +69,7 @@ class DriveLMUniADDataset(Dataset):
             "ego_past_mask": ego_past_mask,
             "ego_future_traj": ego_future_traj,
             "ego_future_mask": ego_future_mask,
+            "future_gt_boxes": future_gt_boxes,
             "can_bus": np.asarray(info["can_bus"], dtype=np.float32),
         }
 
@@ -162,7 +165,7 @@ class DriveLMUniADDataset(Dataset):
             ).astype(np.float32)
             # convert_global_coords_to_local returns [lateral(right+), longitudinal(fwd+)].
             # Remap to nuscenes ego frame: [x=forward, y=left].
-            ego = np.column_stack([local[:, 1], -local[:, 0]])
+            ego = self._remap_local_to_ego(local)
             steps = min(len(ego), self.future_steps)
             traj[:steps] = ego[:steps]
             mask[:steps] = 1.0
@@ -194,12 +197,69 @@ class DriveLMUniADDataset(Dataset):
             ).astype(np.float32)
             # convert_global_coords_to_local returns [lateral(right+), longitudinal(fwd+)].
             # Remap to nuscenes ego frame: [x=forward, y=left].
-            ego = np.column_stack([local[:, 1], -local[:, 0]])
+            ego = self._remap_local_to_ego(local)
             steps = min(len(ego), self.history_steps)
             traj[-steps:] = ego[-steps:]
             mask[-steps:] = 1.0
 
         return traj, mask
+
+    def _build_future_gt_boxes(self, info):
+        future_boxes = []
+        cursor = info
+        for _ in range(self.future_steps):
+            next_token = cursor.get("next", "")
+            if not next_token:
+                future_boxes.append(np.zeros((0, 5), dtype=np.float32))
+                cursor = {"next": ""}
+                continue
+
+            next_info = self.uniad_index.get(next_token)
+            if next_info is None or next_info["scene_token"] != info["scene_token"]:
+                future_boxes.append(np.zeros((0, 5), dtype=np.float32))
+                cursor = {"next": ""}
+                continue
+
+            future_boxes.append(self._transform_boxes_to_current_ego(info, next_info))
+            cursor = next_info
+
+        return future_boxes
+
+    def _transform_boxes_to_current_ego(self, current_info, future_info):
+        gt_boxes = np.asarray(future_info["gt_boxes"], dtype=np.float32)
+        if gt_boxes.size == 0:
+            return np.zeros((0, 5), dtype=np.float32)
+
+        centers_future = gt_boxes[:, :2]
+        future_yaw = self._yaw_from_quaternion(future_info["ego2global_rotation"])
+        current_yaw = self._yaw_from_quaternion(current_info["ego2global_rotation"])
+
+        centers_global = self._rotate_points(centers_future, future_yaw)
+        centers_global += np.asarray(future_info["ego2global_translation"][:2], dtype=np.float32)
+
+        local = convert_global_coords_to_local(
+            coordinates=centers_global,
+            translation=current_info["ego2global_translation"],
+            rotation=current_info["ego2global_rotation"],
+        ).astype(np.float32)
+        centers_current = self._remap_local_to_ego(local)
+
+        box_yaw = gt_boxes[:, 6] + future_yaw - current_yaw
+        box_yaw = (box_yaw + np.pi) % (2 * np.pi) - np.pi
+
+        dims = gt_boxes[:, 3:5].astype(np.float32)
+        return np.concatenate([centers_current, dims, box_yaw[:, None]], axis=1).astype(np.float32)
+
+    def _remap_local_to_ego(self, local):
+        return np.column_stack([local[:, 1], -local[:, 0]]).astype(np.float32)
+
+    def _yaw_from_quaternion(self, quat):
+        return float(Quaternion(quat).yaw_pitch_roll[0])
+
+    def _rotate_points(self, points, yaw):
+        c, s = np.cos(yaw), np.sin(yaw)
+        rot = np.asarray([[c, -s], [s, c]], dtype=np.float32)
+        return points @ rot.T
 
     def __repr__(self):
         return (
