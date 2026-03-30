@@ -180,9 +180,12 @@ class Qwen3MinimumCoTTokenModel(torch.nn.Module):
         new_emb = base_model.get_input_embeddings().weight.data
         if tokenizer_len > old_emb.shape[0]:
             mean_embedding = old_emb.mean(dim=0, keepdim=True)
-            new_emb[old_emb.shape[0] :] = mean_embedding
+            emb_std = old_emb.std().item()
+            num_new = tokenizer_len - old_emb.shape[0]
+            noise = torch.randn(num_new, old_emb.shape[1], device=old_emb.device, dtype=old_emb.dtype) * (emb_std * 0.02)
+            new_emb[old_emb.shape[0] :] = mean_embedding + noise
             output_emb = base_model.get_output_embeddings().weight.data
-            output_emb[old_emb.shape[0] :] = mean_embedding
+            output_emb[old_emb.shape[0] :] = mean_embedding + noise
 
     def _unfreeze_visual_adaptors(self):
         for name, param in self.model.named_parameters():

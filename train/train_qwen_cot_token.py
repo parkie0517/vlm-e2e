@@ -5,8 +5,11 @@ import random
 import sys
 from pathlib import Path
 
+import math
+
 import numpy as np
 import torch
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
@@ -35,6 +38,8 @@ def parse_args():
     parser.add_argument("--subset-size", type=int, default=0)
     parser.add_argument("--val-subset-size", type=int, default=0)
     parser.add_argument("--grad-accum-steps", type=int, default=1)
+    parser.add_argument("--max-grad-norm", type=float, default=1.0)
+    parser.add_argument("--warmup-steps", type=int, default=200)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--resume", default="", help="Path to a checkpoint to resume from.")
@@ -128,6 +133,11 @@ def main():
         weight_decay=args.weight_decay,
     )
 
+    total_steps = len(train_loader) * args.epochs // args.grad_accum_steps
+    warmup_scheduler = LinearLR(optimizer, start_factor=0.1, total_iters=args.warmup_steps)
+    cosine_scheduler = CosineAnnealingLR(optimizer, T_max=max(1, total_steps - args.warmup_steps), eta_min=args.lr * 0.1)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[args.warmup_steps])
+
     amp_dtype = torch.bfloat16 if device.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float16
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda" and amp_dtype == torch.float16)
 
@@ -162,10 +172,17 @@ def main():
 
             if step % args.grad_accum_steps == 0:
                 if scaler.is_enabled():
+                    scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    [p for p in model.parameters() if p.requires_grad],
+                    args.max_grad_norm,
+                )
+                if scaler.is_enabled():
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
 
             running_loss.append(float(outputs["loss"].item()))

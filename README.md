@@ -63,6 +63,13 @@ should keep in mind.
   before modifying trajectory-related code.
 - The pretrained Qwen3-VL feasibility probe uses the `hj_qwen` Conda environment
   and `tools/qwen3_vl_probe.py`.
+- The first RT-2-style minimum-CoT branch is implemented in
+  `models/qwen3_token_cot.py`, `train/train_qwen_cot_token.py`, and
+  `eval/eval_qwen_cot_token.py`. It trains and evaluates successfully, but
+  current validation quality is still poor and debugging is ongoing.
+- The current token-CoT eval path uses constrained trajectory-token generation
+  and exposes debug fields such as `decode_failures`, `saw_sot_rate`, and
+  `saw_eot_rate`.
 
 ## My Contributions
 
@@ -94,7 +101,7 @@ should keep in mind.
 - [x] Attach an MLP head (LLM features -> MLP head -> trajectory output): `models/qwen3_mlp_baseline.py`
 - [x] Run a forward pass and verify output shape and loss computation: `models/qwen3_mlp_baseline.py`
 - [x] Train and evaluate on a small subset first (L2 loss only; evaluate with L2, ADE, FDE, `obj_col`, and `obj_box_col`): `train/train_qwen_mlp_baseline.py`, `eval/eval_qwen_mlp_baseline.py`
-- [ ] Train and evaluate on the full dataset
+- [x] Train and evaluate on the full dataset: `train/train_qwen_mlp_baseline.py`, `eval/eval_qwen_mlp_baseline.py`
 
 ### Create and Train CoT Pipeline Using Baseline Method
 
@@ -111,9 +118,14 @@ should keep in mind.
 
 ### Implement RT-2 Head
 
-- [ ] Implement the RT-2 tokenization head
-- [ ] Train and test with three CoT variants on a subset
-- [ ] Train and test with three CoT variants on the full dataset
+- [x] Implement the RT-2 tokenization head: `utils/trajectory_tokenizer.py`, `models/qwen3_token_cot.py`
+- [x] Implement the minimum-CoT token pipeline (perception first, then trajectory-token prediction)
+- [x] Train and test the minimum-CoT token pipeline on a subset: `train/train_qwen_cot_token.py`, `eval/eval_qwen_cot_token.py`
+- [x] Train and test the minimum-CoT token pipeline on the full dataset: `train/train_qwen_cot_token.py`, `eval/eval_qwen_cot_token.py`
+- [ ] Train and test the no-CoT token pipeline on a subset
+- [ ] Train and test the no-CoT token pipeline on the full dataset
+- [ ] Train and test the DriveLM-style CoT token pipeline on a subset
+- [ ] Train and test the DriveLM-style CoT token pipeline on the full dataset
 
 ### Analyze Token Head Method
 
