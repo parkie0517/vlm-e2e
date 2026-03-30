@@ -70,6 +70,15 @@ should keep in mind.
 - The current token-CoT eval path uses constrained trajectory-token generation
   and exposes debug fields such as `decode_failures`, `saw_sot_rate`, and
   `saw_eot_rate`.
+- The first CoT + diffusion branch is implemented in
+  `models/qwen3_cot_diffusion.py`, `models/diffusion_head.py`,
+  `train/train_qwen_cot_diffusion.py`, and `eval/eval_qwen_cot_diffusion.py`.
+  It is a front-camera-only, command-conditioned diffusion pipeline with
+  three-pass evaluation: perception answer generation, command generation, and
+  diffusion trajectory prediction.
+- The diffusion eval path reports `cmd_accuracy` in addition to trajectory
+  metrics, because the model predicts a high-level command (`right`, `left`, or
+  `straight`) before running the diffusion head.
 
 ## My Contributions
 
@@ -133,9 +142,15 @@ should keep in mind.
 
 ### Implement Diffusion Head
 
-- [ ] Implement the diffusion head
-- [ ] Train and test with three CoT variants on a subset
-- [ ] Train and test with three CoT variants on the full dataset
+- [x] Implement the diffusion head: `models/diffusion_head.py`
+- [x] Implement the CoT + diffusion model wrapper: `models/qwen3_cot_diffusion.py`
+- [x] Train and test the minimum-CoT diffusion pipeline on a subset: `train/train_qwen_cot_diffusion.py`, `eval/eval_qwen_cot_diffusion.py`
+- [x] Train and test the minimum-CoT diffusion pipeline on the full dataset: `train/train_qwen_cot_diffusion.py`, `eval/eval_qwen_cot_diffusion.py`
+- [ ] Train and test the no-CoT diffusion pipeline on a subset
+- [ ] Train and test the no-CoT diffusion pipeline on the full dataset
+- [ ] Train and test the DriveLM-style CoT diffusion pipeline on a subset
+- [ ] Train and test the DriveLM-style CoT diffusion pipeline on the full dataset
+
 
 ### Analyze Diffusion Head Method
 

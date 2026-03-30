@@ -6,6 +6,9 @@ checkpoints/
 .tmp_*/
 outputs/
 
+UniAD/
+DiffusionDrive/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

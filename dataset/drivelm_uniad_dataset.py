@@ -56,6 +56,8 @@ class DriveLMUniADDataset(Dataset):
         ego_future_traj, ego_future_mask = self._build_ego_future(info)
         future_gt_boxes = self._build_future_gt_boxes(info)
 
+        command = self._derive_command(ego_future_traj, ego_future_mask)
+
         return {
             "scene_token": sample["scene_token"],
             "frame_token": sample["frame_token"],
@@ -71,6 +73,7 @@ class DriveLMUniADDataset(Dataset):
             "ego_future_mask": ego_future_mask,
             "future_gt_boxes": future_gt_boxes,
             "can_bus": np.asarray(info["can_bus"], dtype=np.float32),
+            "command": command,
         }
 
     def _validate_camera_names(self, camera_names):
@@ -249,6 +252,23 @@ class DriveLMUniADDataset(Dataset):
 
         dims = gt_boxes[:, 3:5].astype(np.float32)
         return np.concatenate([centers_current, dims, box_yaw[:, None]], axis=1).astype(np.float32)
+
+    def _derive_command(self, ego_future_traj, ego_future_mask):
+        """Derive 3-class driving command from final valid waypoint lateral displacement.
+
+        Ego frame: x=forward, y=left.
+        Returns: 0=right, 1=left, 2=straight (matches DiffusionDrive convention).
+        """
+        valid = ego_future_mask.astype(bool)
+        if not valid.any():
+            return 2  # default straight
+        last_valid_idx = int(np.where(valid)[0][-1])
+        lateral_y = float(ego_future_traj[last_valid_idx, 1])
+        if lateral_y >= 2.0:
+            return 1  # left
+        elif lateral_y <= -2.0:
+            return 0  # right
+        return 2  # straight
 
     def _remap_local_to_ego(self, local):
         return np.column_stack([local[:, 1], -local[:, 0]]).astype(np.float32)
