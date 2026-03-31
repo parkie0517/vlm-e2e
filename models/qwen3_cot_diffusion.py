@@ -264,9 +264,11 @@ class Qwen3CoTDiffusionModel(nn.Module):
             vlm_loss = torch.tensor(0.0, device=hidden.device, requires_grad=True)
 
         # --- Extract last-token hidden state for diffusion conditioning ---
+        # Detach: diffusion gradients must not flow back into VLM LoRA weights,
+        # otherwise they corrupt command prediction ability.
         last_indices = batch["attention_mask"].sum(dim=-1) - 1
         features = hidden[torch.arange(hidden.shape[0], device=hidden.device), last_indices]
-        global_cond = self.vlm_projector(features.float())
+        global_cond = self.vlm_projector(features.detach().float())
 
         # --- Diffusion head ---
         diff_out = self.diffusion_head.forward_train(

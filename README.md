@@ -163,4 +163,4 @@ Special thanks to the following projects:
 - [UniAD](https://github.com/opendrivelab/uniad)
 - [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)
 - [DriveLM](https://github.com/OpenDriveLab/DriveLM)
-- [DiffusionDriveV2](https://github.com/hustvl/DiffusionDriveV2)
+- [DiffusionDrive](https://github.com/hustvl/DiffusionDrive)
