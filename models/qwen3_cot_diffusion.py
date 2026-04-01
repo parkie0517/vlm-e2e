@@ -18,7 +18,6 @@ from typing import Any, Dict, List
 import numpy as np
 import torch
 import torch.nn as nn
-from peft import LoraConfig, get_peft_model
 from qwen_vl_utils import process_vision_info
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
@@ -149,9 +148,6 @@ class Qwen3CoTDiffusionModel(nn.Module):
         down_dims: tuple = (128, 256),
         t_trunc: int = 40,
         num_inference_steps: int = 2,
-        lora_r: int = 8,
-        lora_alpha: int = 16,
-        lora_dropout: float = 0.05,
         gradient_checkpointing: bool = True,
     ):
         super().__init__()
@@ -175,23 +171,10 @@ class Qwen3CoTDiffusionModel(nn.Module):
         for param in base_model.parameters():
             param.requires_grad = False
 
-        lora_config = LoraConfig(
-            r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            bias="none",
-            target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "gate_proj", "up_proj", "down_proj",
-            ],
-            task_type="CAUSAL_LM",
-        )
-        self.model = get_peft_model(base_model, lora_config)
-        if gradient_checkpointing:
-            self.model.gradient_checkpointing_enable()
-            self.model.enable_input_require_grads()
-
-        self._unfreeze_visual_adaptors()
+        # No LoRA — VLM stays fully frozen to preserve pretrained
+        # instruction-following (command prediction) ability.
+        # Only the projector + diffusion head are trained.
+        self.model = base_model
 
         # --- VLM → Diffusion projector ---
         hidden_size = int(self.model.config.text_config.hidden_size)
@@ -215,60 +198,29 @@ class Qwen3CoTDiffusionModel(nn.Module):
         )
         self.diffusion_head.float()
 
-    def _unfreeze_visual_adaptors(self):
-        for name, param in self.model.named_parameters():
-            if name.startswith("base_model.model.model.visual.merger") or name.startswith(
-                "base_model.model.model.visual.deepstack_merger_list"
-            ):
-                param.requires_grad = True
-
     def forward(self, batch: Dict[str, Any]) -> Dict[str, Any]:
-        """Training forward: VLM CE loss + diffusion L2 loss.
+        """Training forward: diffusion L2 loss only.
 
-        Avoids passing labels to the model (which allocates full vocab logits).
-        Instead we extract hidden states and compute CE on command tokens only.
+        VLM is fully frozen — no CE loss needed. We just extract hidden states
+        as conditioning for the diffusion head.
         """
         model_inputs = {
             k: v for k, v in batch.items()
             if k in {"input_ids", "attention_mask", "mm_token_type_ids", "pixel_values", "image_grid_thw"}
         }
-        outputs = self.model(
-            **model_inputs,
-            output_hidden_states=True,
-            return_dict=True,
-            use_cache=False,
-        )
-
-        # --- VLM CE loss on command tokens only (memory efficient) ---
+        with torch.no_grad():
+            outputs = self.model(
+                **model_inputs,
+                output_hidden_states=True,
+                return_dict=True,
+                use_cache=False,
+            )
         hidden = outputs.hidden_states[-1]  # (B, seq_len, H)
-        labels = batch["labels"]  # -100 everywhere except command word tokens
-        # Find supervised positions: where labels != -100
-        # Compute logits only at those positions to save memory
-        supervised_mask = labels != -100  # (B, seq_len)
-        if supervised_mask.any():
-            # Shift: predict next token, so use hidden at position t to predict label at t
-            # In causal LM: logit[t] predicts token[t+1], but labels are already aligned
-            # by HF convention (labels[t] is the target for logits[t])
-            lm_head = self.model.get_output_embeddings()
-            # Gather hidden states at supervised positions
-            sup_hidden = hidden[supervised_mask]  # (N, H)
-            sup_logits = lm_head(sup_hidden)  # (N, vocab_size)
-            # Shift labels: for causal LM, logits at pos t predict token at pos t+1
-            shift_labels = labels[:, 1:]  # (B, seq_len-1)
-            shift_mask = shift_labels != -100
-            shift_hidden = hidden[:, :-1][shift_mask]  # (N, H)
-            shift_logits = lm_head(shift_hidden)  # (N, vocab)
-            shift_targets = shift_labels[shift_mask]  # (N,)
-            vlm_loss = nn.functional.cross_entropy(shift_logits, shift_targets)
-        else:
-            vlm_loss = torch.tensor(0.0, device=hidden.device, requires_grad=True)
 
-        # --- Extract last-token hidden state for diffusion conditioning ---
-        # Detach: diffusion gradients must not flow back into VLM LoRA weights,
-        # otherwise they corrupt command prediction ability.
+        # Extract last-token hidden state as scene context for diffusion
         last_indices = batch["attention_mask"].sum(dim=-1) - 1
         features = hidden[torch.arange(hidden.shape[0], device=hidden.device), last_indices]
-        global_cond = self.vlm_projector(features.detach().float())
+        global_cond = self.vlm_projector(features.float())
 
         # --- Diffusion head ---
         diff_out = self.diffusion_head.forward_train(
@@ -278,8 +230,8 @@ class Qwen3CoTDiffusionModel(nn.Module):
         )
 
         return {
-            "loss": vlm_loss + diff_out["loss"],
-            "vlm_loss": vlm_loss.detach(),
+            "loss": diff_out["loss"],
+            "vlm_loss": torch.tensor(0.0),
             "diff_loss": diff_out["loss"].detach(),
             "pred_traj": diff_out["pred_traj"],
         }
@@ -387,18 +339,35 @@ class Qwen3CoTDiffusionModel(nn.Module):
         image_path: str,
         perception_question: str,
         perception_answer: str,
+        command: int = 2,
     ) -> Dict[str, Any]:
-        """Full inference pipeline: command generation + diffusion trajectory."""
-        cmd_result = self.generate_command_and_features(
-            image_path, perception_question, perception_answer
+        """Inference pipeline: VLM hidden state extraction + diffusion trajectory.
+
+        command: GT command index (0=right, 1=left, 2=straight)
+        """
+        context = DEFAULT_PERCEPTION_TEMPLATE.format(
+            question=perception_question, answer=perception_answer
         )
+        prompt = f"{context}\n\n{DEFAULT_MOTION_PROMPT}"
+        inputs = self._prepare_messages(image_path, prompt)
+
+        model_inputs = {
+            k: v for k, v in inputs.items()
+            if k in {"input_ids", "attention_mask", "mm_token_type_ids", "pixel_values", "image_grid_thw"}
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, output_hidden_states=True, return_dict=True, use_cache=False)
+        hidden = outputs.hidden_states[-1]
+        last_idx = inputs["attention_mask"].sum(dim=-1) - 1
+        features = hidden[0, last_idx[0]]
+        global_cond = self.vlm_projector(features.float().unsqueeze(0))
+
         device = next(self.parameters()).device
-        command = torch.tensor([cmd_result["command_idx"]], dtype=torch.long, device=device)
-        pred_traj = self.diffusion_head.forward_inference(command, cmd_result["global_cond"])
+        cmd_tensor = torch.tensor([command], dtype=torch.long, device=device)
+        pred_traj = self.diffusion_head.forward_inference(cmd_tensor, global_cond)
         return {
             "trajectory": pred_traj[0].cpu().numpy(),
-            "command_text": cmd_result["command_text"],
-            "command_idx": cmd_result["command_idx"],
+            "command": command,
         }
 
 

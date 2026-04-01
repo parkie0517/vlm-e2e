@@ -55,8 +55,6 @@ def evaluate_dataset(model, dataset, device, limit=None, debug_indices=None):
     col_metrics = []
     debug_indices = set(debug_indices or [])
     debug_samples = []
-    cmd_correct = 0
-    cmd_total = 0
     num_items = len(dataset) if limit is None else min(len(dataset), limit)
     iterator = tqdm(range(num_items), desc="eval cot+diff", ncols=80, leave=True)
 
@@ -70,19 +68,15 @@ def evaluate_dataset(model, dataset, device, limit=None, debug_indices=None):
             perception_question=perception_qa["Q"],
         )
 
-        # Pass 2+3: generate command + diffusion trajectory
+        # Pass 2: extract hidden state + diffusion trajectory (GT command)
         result = model.generate_trajectory(
             image_path=sample["image_paths"]["CAM_FRONT"],
             perception_question=perception_qa["Q"],
             perception_answer=perception_answer,
+            command=sample["command"],
         )
 
         pred_traj = result["trajectory"]
-        gt_cmd = sample["command"]
-        pred_cmd = result["command_idx"]
-        if pred_cmd == gt_cmd:
-            cmd_correct += 1
-        cmd_total += 1
 
         if idx in debug_indices:
             debug_samples.append({
@@ -90,9 +84,7 @@ def evaluate_dataset(model, dataset, device, limit=None, debug_indices=None):
                 "frame_token": sample["frame_token"],
                 "perception_question": perception_qa["Q"],
                 "perception_answer": perception_answer,
-                "pred_command": result["command_text"],
-                "pred_command_idx": pred_cmd,
-                "gt_command": COMMAND_WORDS[gt_cmd],
+                "gt_command": COMMAND_WORDS[sample["command"]],
                 "pred_traj": pred_traj.tolist(),
                 "target_traj": sample["ego_future_traj"].tolist(),
                 "target_mask": sample["ego_future_mask"].tolist(),
@@ -114,7 +106,6 @@ def evaluate_dataset(model, dataset, device, limit=None, debug_indices=None):
         "fde": mean_metric(reg_metrics, "fde"),
         "obj_col": mean_metric(col_metrics, "obj_col"),
         "obj_box_col": mean_metric(col_metrics, "obj_box_col"),
-        "cmd_accuracy": float(cmd_correct / cmd_total) if cmd_total > 0 else float("nan"),
     }
     if debug_samples:
         metrics["debug_samples"] = debug_samples

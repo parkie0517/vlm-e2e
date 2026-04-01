@@ -250,6 +250,13 @@ class TrajectoryDiffusionHead(nn.Module):
             down_dims=list(down_dims),
         )
 
+        # Score head: predicts confidence per mode from denoised trajectory
+        self.score_head = nn.Sequential(
+            nn.Linear(future_steps * 2, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1),
+        )
+
         # DDIM scheduler
         self.scheduler = DDIMScheduler(
             num_train_timesteps=num_train_timesteps,
@@ -308,16 +315,27 @@ class TrajectoryDiffusionHead(nn.Module):
         # Denormalize predictions
         pred_denorm = self._denormalize(pred)
 
-        # Winner-take-all: find best mode per sample
+        # Score head: predict confidence per mode
+        scores = self.score_head(pred_flat.detach().reshape(bs * self.num_modes, -1))  # (B*M, 1)
+        scores = scores.reshape(bs, self.num_modes)  # (B, M)
+
+        # Find closest mode to GT (for regression + classification targets)
         with torch.no_grad():
             per_mode_l2 = ((pred_denorm - gt_traj.unsqueeze(1)) ** 2).sum(dim=-1).mean(dim=-1)  # (B, M)
             best_mode = per_mode_l2.argmin(dim=-1)  # (B,)
 
-        # Loss on best mode only
+        # Regression loss on closest mode
         best_pred = pred_denorm[torch.arange(bs, device=device), best_mode]  # (B, T, 2)
-        loss = ((best_pred - gt_traj) ** 2).sum(dim=-1).mean()
+        reg_loss = ((best_pred - gt_traj) ** 2).sum(dim=-1).mean()
 
-        return {"loss": loss, "pred_traj": best_pred.detach()}
+        # Classification loss: closest mode = positive, rest = negative
+        cls_target = torch.zeros(bs, self.num_modes, device=device)
+        cls_target[torch.arange(bs, device=device), best_mode] = 1.0
+        cls_loss = nn.functional.binary_cross_entropy_with_logits(scores, cls_target)
+
+        loss = reg_loss + 0.5 * cls_loss
+
+        return {"loss": loss, "reg_loss": reg_loss.detach(), "cls_loss": cls_loss.detach(), "pred_traj": best_pred.detach()}
 
     @torch.inference_mode()
     def forward_inference(
@@ -371,9 +389,9 @@ class TrajectoryDiffusionHead(nn.Module):
         # Denormalize and reshape
         result = self._denormalize(img.reshape(bs, self.num_modes, self.future_steps, 2))
 
-        # Select best mode: use the one closest to its anchor (most confident)
-        anchor_dist = ((result - self._denormalize(anchors_norm)) ** 2).sum(dim=-1).mean(dim=-1)  # (B, M)
-        best_mode = anchor_dist.argmin(dim=-1)
+        # Select best mode using learned score head
+        scores = self.score_head(img.reshape(bs * self.num_modes, -1)).reshape(bs, self.num_modes)
+        best_mode = scores.argmax(dim=-1)
         return result[torch.arange(bs, device=device), best_mode]
 
     def _normalize(self, traj: torch.Tensor) -> torch.Tensor:
